@@ -380,6 +380,30 @@ impl Rule for Md044 {
             return;
         }
         let code_blocks = options.bool("code_blocks", true);
+        let html_elements = options.bool("html_elements", true);
+
+        if html_elements {
+            // HTML literals are verbatim, so they are reported without a fix.
+            for node in ctx.root.descendants() {
+                let data = node.data();
+                let literal = match &data.value {
+                    NodeValue::HtmlInline(html) => html.as_str(),
+                    NodeValue::HtmlBlock(block) => block.literal.as_str(),
+                    _ => continue,
+                };
+                for name in &names {
+                    if !find_case_insensitive(literal, name).is_empty() {
+                        diagnostics.push(ctx.diagnostic(
+                            &MD044,
+                            mdk_core::ast::node_span(node),
+                            format!(
+                                "proper name `{name}` has incorrect capitalization in HTML"
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
 
         for node in ctx.root.descendants() {
             // Check prose text nodes with exact source mapping and autofix.
@@ -606,7 +630,20 @@ fn delimiter_rule(
             span,
             format!("expected `{expected}` delimiters, found `{actual}`",),
         );
-        if let Some(fix) = delimiter_fix(raw, count, actual, expected) {
+        // `_` cannot open or close emphasis inside a word, so converting an
+        // intraword `*` run would remove the emphasis entirely.
+        let intraword_underscore = expected == '_'
+            && (ctx.source.text()[..range.start]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+                || ctx.source.text()[range.end..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_alphanumeric));
+        if !intraword_underscore
+            && let Some(fix) = delimiter_fix(raw, count, actual, expected)
+        {
             diagnostic.fix = Some(Fix::new(range, fix));
         }
         diagnostics.push(diagnostic);
@@ -742,5 +779,55 @@ mod tests {
             ids(&["MD050"], "**a** and __b__\n", Dialect::Commonmark),
             vec!["MD050"]
         );
+    }
+
+    #[test]
+    fn md049_intraword_emphasis_is_reported_without_a_fix() {
+        let diagnostics = crate::testutil::lint_with(
+            &["MD049"],
+            "_a_ and foo*b*bar\n",
+            Dialect::Commonmark,
+        );
+        assert_eq!(diagnostics.len(), 1);
+        assert!(
+            diagnostics[0].fix.is_none(),
+            "`_` cannot delimit intraword emphasis"
+        );
+    }
+
+    #[test]
+    fn md050_intraword_strong_is_reported_without_a_fix() {
+        let diagnostics = crate::testutil::lint_with(
+            &["MD050"],
+            "__a__ and foo**b**bar\n",
+            Dialect::Commonmark,
+        );
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].fix.is_none());
+    }
+
+    #[test]
+    fn md044_checks_html_by_default() {
+        let config: crate::config::LintConfig = toml::from_str(
+            "enable = [\"MD044\"]\n[rules.MD044]\nnames = [\"JavaScript\"]\n",
+        )
+        .unwrap();
+        let diagnostics = crate::engine::lint_text(
+            "<script>javascript</script>\n",
+            Dialect::Commonmark,
+            &config,
+        );
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+
+        let config: crate::config::LintConfig = toml::from_str(
+            "enable = [\"MD044\"]\n[rules.MD044]\nnames = [\"JavaScript\"]\nhtml_elements = false\n",
+        )
+        .unwrap();
+        let diagnostics = crate::engine::lint_text(
+            "<script>javascript</script>\n",
+            Dialect::Commonmark,
+            &config,
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
     }
 }

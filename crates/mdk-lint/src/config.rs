@@ -58,11 +58,49 @@ impl LintConfig {
     #[must_use]
     pub fn options_for(&self, meta: &RuleMeta) -> RuleOptions<'_> {
         self.rules
-            .get(meta.id)
-            .or_else(|| self.rules.get(meta.name))
-            .map_or(RuleOptions { value: None }, |value| RuleOptions {
+            .iter()
+            .find(|(key, _)| item_matches(key, meta))
+            .map_or(RuleOptions { value: None }, |(_, value)| RuleOptions {
                 value: Some(value),
             })
+    }
+
+    /// Checks that every rule selector and rule table key names a known rule.
+    ///
+    /// Unknown selectors are otherwise silently ignored, which makes a typo
+    /// in `enable`, `disable`, `severity` or a `[lint.rules.*]` table look
+    /// like a configuration that has no effect.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message listing every unknown selector.
+    pub fn validate(&self) -> Result<(), String> {
+        let known = |key: &str| {
+            crate::rules::RULES
+                .iter()
+                .any(|rule| item_matches(key, rule.meta()))
+        };
+        let mut unknown = Vec::new();
+        for key in self.enable.iter().chain(self.disable.iter()) {
+            if !known(key) {
+                unknown.push(format!("`{key}` (enable/disable)"));
+            }
+        }
+        for key in self.severity.keys() {
+            if !known(key) {
+                unknown.push(format!("`{key}` (severity)"));
+            }
+        }
+        for key in self.rules.keys() {
+            if !known(key) {
+                unknown.push(format!("`{key}` (rules)"));
+            }
+        }
+        if unknown.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("unknown rule(s): {}", unknown.join(", ")))
+        }
     }
 }
 
@@ -176,5 +214,34 @@ mod tests {
     #[test]
     fn unknown_fields_are_rejected() {
         assert!(toml::from_str::<LintConfig>("nope = 1").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_unknown_rule_names() {
+        assert!(LintConfig::default().validate().is_ok());
+
+        let config: LintConfig = LintConfig {
+            disable: vec!["MD0OOPS".to_string()],
+            ..LintConfig::default()
+        };
+        assert!(config.validate().is_err());
+
+        let config: LintConfig = LintConfig {
+            enable: vec!["line-length".to_string()],
+            severity: std::collections::BTreeMap::from([(
+                "MD013".to_string(),
+                mdk_core::Severity::Info,
+            )]),
+            rules: std::collections::BTreeMap::new(),
+            ..LintConfig::default()
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn options_tables_match_ids_case_insensitively() {
+        let config: LintConfig =
+            toml::from_str("[rules.md013]\nline_length = 100\n").unwrap();
+        assert_eq!(config.options_for(&META).usize("line_length", 80), 100);
     }
 }

@@ -170,8 +170,30 @@ impl Rule for Md053 {
             .chain(ctx.facts().usages.iter())
             .map(|usage| usage.normalized.clone())
             .collect();
-        // Shortcut references leave no trace in the AST, so fall back to a
-        // case-insensitive source scan for `[label]`.
+        // Shortcuts that resolve to a link have their brackets split away
+        // from the label, so inspect the raw source of link nodes as well.
+        for node in ctx.root.descendants() {
+            let data = node.data();
+            if !matches!(&data.value, NodeValue::Link(_) | NodeValue::Image(_)) {
+                continue;
+            }
+            let span = mdk_core::ast::node_span(node);
+            let raw = ctx.source.slice(ctx.source.span_range(span));
+            if !is_shortcut_reference(raw) {
+                continue;
+            }
+            let normalized =
+                crate::context::normalize_label(&mdk_core::ast::collect_text(node));
+            if ctx
+                .facts()
+                .definitions
+                .iter()
+                .any(|definition| definition.normalized == normalized)
+            {
+                used.insert(normalized);
+            }
+        }
+        // Unresolved shortcut text stays a Text node; scan those too.
         for node in ctx.root.descendants() {
             if let NodeValue::Text(text) = &node.data().value {
                 for definition in &ctx.facts().definitions {
@@ -208,6 +230,19 @@ impl Rule for Md053 {
             ));
         }
     }
+}
+
+/// Whether `raw` is a shortcut reference (`[label]` or `![label]`) rather
+/// than an inline, full or collapsed link or image.
+fn is_shortcut_reference(raw: &str) -> bool {
+    let raw = raw.strip_prefix('!').unwrap_or(raw);
+    let Some(inner) = raw
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+    else {
+        return false;
+    };
+    !inner.is_empty() && !inner.contains("][") && !inner.contains("](")
 }
 
 fn contains_shortcut(text: &str, label: &str) -> bool {
@@ -260,5 +295,11 @@ mod tests {
             Dialect::Gfm,
         );
         assert_eq!(duplicates, vec!["MD053"]);
+    }
+
+    #[test]
+    fn md053_shortcut_reference_marks_a_definition_used() {
+        assert!(ids(&["MD053"], "[ref]: /x\n\nSee [ref].\n", Dialect::Gfm).is_empty());
+        assert!(ids(&["MD053"], "[img]: /x\n\n![img]\n", Dialect::Gfm).is_empty());
     }
 }

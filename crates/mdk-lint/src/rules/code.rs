@@ -215,12 +215,34 @@ impl Rule for Md048 {
                     expected as char, actual as char
                 ),
             );
-            if let Some(fixes) = fence_fixes(ctx, node, code, actual, expected) {
+            // Converting the fence character can turn a content line into
+            // the closing fence, or break the opening line's info string.
+            let length = code.fence_length.max(3);
+            let info_conflicts = code.info.contains(expected as char);
+            if !info_conflicts
+                && !content_closes_fence(&code.literal, expected, length)
+                && let Some(fixes) = fence_fixes(ctx, node, code, actual, expected)
+            {
                 diagnostic.fix = Some(fixes);
             }
             diagnostics.push(diagnostic);
         }
     }
+}
+
+/// Whether any content line would be read as the closing fence after the
+/// fence character changes.
+fn content_closes_fence(literal: &str, ch: u8, length: usize) -> bool {
+    literal.lines().any(|line| {
+        let trimmed = line.trim_end();
+        let indent = trimmed.len() - trimmed.trim_start_matches(' ').len();
+        if indent > 3 {
+            return false;
+        }
+        let rest = &trimmed[indent..];
+        let run = rest.bytes().take_while(|byte| *byte == ch).count();
+        run >= length && rest[run..].trim().is_empty()
+    })
 }
 
 /// Builds a fix replacing the opening and (if present) closing fence runs.
@@ -270,4 +292,46 @@ fn replace_fence_run(line: &str, from: u8, to: u8) -> Option<String> {
     out.extend(std::iter::repeat_n(to_char, run));
     out.push_str(&line[start + run..]);
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::LintConfig;
+    use crate::engine::lint_text;
+    use mdk_core::Dialect;
+
+    fn backtick_config() -> LintConfig {
+        toml::from_str("enable = [\"MD048\"]\n[rules.MD048]\nstyle = \"backtick\"\n")
+            .expect("config")
+    }
+
+    #[test]
+    fn md048_fixes_plain_fences() {
+        let diagnostics =
+            lint_text("~~~\ncode\n~~~\n", Dialect::Gfm, &backtick_config());
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].fix.is_some());
+    }
+
+    #[test]
+    fn md048_does_not_fix_when_content_would_close_the_fence() {
+        let markdown = "```rust\nlet x = 1;\n```\n\n~~~\n```\nnested\n```\n~~~\n";
+        let diagnostics = lint_text(markdown, Dialect::Gfm, &backtick_config());
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert!(
+            diagnostics[0].fix.is_none(),
+            "conversion would destroy the code block"
+        );
+    }
+
+    #[test]
+    fn md048_does_not_fix_when_info_contains_the_fence_char() {
+        let diagnostics = lint_text(
+            "~~~ text `backtick`\nx\n~~~\n",
+            Dialect::Gfm,
+            &backtick_config(),
+        );
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].fix.is_none());
+    }
 }
