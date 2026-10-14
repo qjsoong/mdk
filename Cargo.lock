@@ -315,7 +315,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "mdk-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -334,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "mdk-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "comrak",
  "serde",
@@ -345,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "mdk-fmt"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "comrak",
  "mdk-core",
@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "mdk-lint"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "comrak",
  "mdk-core",
@@ -368,7 +368,7 @@ dependencies = [
 
 [[package]]
 name = "mdk-render"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "comrak",
  "mdk-core",

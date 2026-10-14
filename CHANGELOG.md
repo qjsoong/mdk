@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.2.0 - 2026-10-14
 
 ### Added
 
@@ -17,6 +17,21 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **mdk-fmt**: structural rewrites no longer overwrite each other on the same
+  line (a heading, fence or table edit could be replaced by a later list edit),
+  so formatting is idempotent for constructs such as `* # Title ##` and `* ~~~`;
+  hard breaks require two literal spaces rather than any trailing whitespace;
+  tables inside blockquotes and list items are aligned instead of being
+  rewritten as quoted text; blank lines inserted between adjacent blocks keep
+  blockquote markers and respect `max_blank_lines`.
+- **mdk-lint**: MD048 no longer offers a fix that would let code-block content
+  become the closing fence, MD049/MD050 skip intraword emphasis that `_` cannot
+  delimit, MD053 recognises resolved shortcut references (no more false "unused"
+  errors), MD044 checks inline and block HTML again, and unknown rule selectors
+  in configuration are rejected with exit code 2.
+- **mdk-render**: standalone document titles derived from headings are escaped,
+  and terminal tables fit the requested width by splitting long words.
+- **mdk-cli**: `-` cannot be combined with file paths, matching the formatter.
 - **mdk-lint**: MD041 and MD025 recognise TOML titles written without spaces
   (`title="..."`) and no longer treat an indented `title` key as a document
   title.
