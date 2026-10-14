@@ -29,22 +29,11 @@ pub fn render_html(markdown: &str, dialect: Dialect, options: &HtmlOptions) -> S
 
 fn document_title(markdown: &str, options: &HtmlOptions) -> String {
     let source = Source::new(markdown.to_string());
-    if let Some(front_matter) = source.front_matter() {
-        for line in front_matter.lines() {
-            let trimmed = line.trim();
-            if let Some(value) = trimmed.strip_prefix("title:") {
-                let value = value.trim().trim_matches(['"', '\'']);
-                if !value.is_empty() {
-                    return escape_html(value);
-                }
-            }
-            if let Some(value) = trimmed.strip_prefix("title =") {
-                let value = value.trim().trim_matches(['"', '\'']);
-                if !value.is_empty() {
-                    return escape_html(value);
-                }
-            }
-        }
+    if let Some(title) = source
+        .front_matter_value("title")
+        .filter(|title| !title.is_empty())
+    {
+        return escape_html(title);
     }
     let comrak_options = Dialect::Gfm.comrak_options();
     let title = with_parsed_options(&source, &comrak_options, |root| {

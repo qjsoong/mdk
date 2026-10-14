@@ -334,6 +334,24 @@ impl Source {
         self.front_matter.clone()
     }
 
+    /// The value of a top-level scalar key in the front matter block.
+    ///
+    /// Both front matter syntaxes are understood: `key: value` (YAML) and
+    /// `key = value` (TOML). A key must start in column 1, the value is
+    /// trimmed, and one matching pair of surrounding quotes is removed.
+    /// Nothing else is interpreted, so escape sequences, comments, nested
+    /// keys, lists and multi-line scalars are returned as written.
+    ///
+    /// Returns `None` when the document has no front matter or the key is
+    /// absent. A key with an empty value is `Some("")`.
+    #[must_use]
+    pub fn front_matter_value(&self, key: &str) -> Option<&str> {
+        self.front_matter()?.lines().find_map(|line| {
+            let (line_key, value) = split_front_matter_line(line)?;
+            (line_key == key).then_some(value)
+        })
+    }
+
     /// The text to hand to a parser: identical to [`Source::text`] except
     /// that front matter bytes are replaced by spaces, keeping every byte
     /// offset stable.
@@ -432,6 +450,31 @@ fn split_lines(text: &str) -> (Vec<Line>, LineEnding) {
     };
 
     (lines, line_ending)
+}
+
+/// Splits a front matter line into its top-level key and scalar value.
+///
+/// Returns `None` for lines that do not start with a key, so indented keys,
+/// list items and plain text never match.
+fn split_front_matter_line(line: &str) -> Option<(&str, &str)> {
+    let (key, value) = line.split_once([':', '='])?;
+    if key.is_empty() || key.starts_with(char::is_whitespace) {
+        return None;
+    }
+    Some((key.trim_end(), unquote(value.trim())))
+}
+
+/// Removes one matching pair of surrounding quotes from a value.
+fn unquote(value: &str) -> &str {
+    for quote in ['"', '\''] {
+        if let Some(inner) = value
+            .strip_prefix(quote)
+            .and_then(|rest| rest.strip_suffix(quote))
+        {
+            return inner;
+        }
+    }
+    value
 }
 
 fn detect_front_matter(text: &str, lines: &[Line]) -> Option<Range<usize>> {
@@ -571,5 +614,55 @@ mod tests {
     fn empty_front_matter_is_recognised() {
         let source = Source::new("---\n---\ntext\n".to_string());
         assert!(source.front_matter().is_some());
+    }
+
+    #[test]
+    fn reads_yaml_and_toml_front_matter_values() {
+        let yaml = Source::new(
+            "---\ntitle: Hello\n  indented: no\nsubtitle: Other\nurl: https://x/y\n---\nbody\n"
+                .to_string(),
+        );
+        assert_eq!(yaml.front_matter_value("title"), Some("Hello"));
+        assert_eq!(yaml.front_matter_value("url"), Some("https://x/y"));
+        assert_eq!(yaml.front_matter_value("subtitle"), Some("Other"));
+        assert_eq!(yaml.front_matter_value("missing"), None);
+
+        let toml = Source::new(
+            "+++\ntitle = \"Hello\"\ndraft=true\ndate = 2026-10-14\n+++\nbody\n"
+                .to_string(),
+        );
+        assert_eq!(toml.front_matter_value("title"), Some("Hello"));
+        assert_eq!(toml.front_matter_value("draft"), Some("true"));
+        assert_eq!(toml.front_matter_value("date"), Some("2026-10-14"));
+    }
+
+    #[test]
+    fn front_matter_values_are_trimmed_and_unquoted() {
+        let source = Source::new(
+            "---\ntitle:   'Spaced out'  \nnote: a value with: a colon\nempty:\nquoted: \"\"\n---\n"
+                .to_string(),
+        );
+        assert_eq!(source.front_matter_value("title"), Some("Spaced out"));
+        assert_eq!(
+            source.front_matter_value("note"),
+            Some("a value with: a colon")
+        );
+        assert_eq!(source.front_matter_value("empty"), Some(""));
+        assert_eq!(source.front_matter_value("quoted"), Some(""));
+    }
+
+    #[test]
+    fn only_top_level_keys_are_read() {
+        let source = Source::new(
+            "---\nauthor:\n  name: Nested\n- title: list item\ntitle: Top\n---\n"
+                .to_string(),
+        );
+        assert_eq!(source.front_matter_value("title"), Some("Top"));
+        assert_eq!(source.front_matter_value("name"), None);
+        assert_eq!(
+            Source::new("# title: not front matter\n".to_string())
+                .front_matter_value("title"),
+            None
+        );
     }
 }

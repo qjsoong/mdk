@@ -480,14 +480,7 @@ impl Rule for Md025 {
 }
 
 fn front_matter_has_title(ctx: &LintContext<'_, '_>) -> bool {
-    let Some(front_matter) = ctx.source.front_matter() else {
-        return false;
-    };
-    front_matter.lines().any(|line| {
-        let trimmed = line.trim_start();
-        trimmed.strip_prefix("title:").is_some()
-            || trimmed.strip_prefix("title =").is_some()
-    })
+    ctx.source.front_matter_value("title").is_some()
 }
 
 pub(crate) static MD026: RuleMeta = RuleMeta {
@@ -661,5 +654,19 @@ mod tests {
         let diagnostics =
             lint_text("---\ntitle: x\n---\n\ntext\n", Dialect::Gfm, &config);
         assert!(diagnostics.is_empty());
+
+        // TOML front matter, with and without spaces around the separator.
+        let diagnostics =
+            lint_text("+++\ntitle=\"x\"\n+++\n\ntext\n", Dialect::Gfm, &config);
+        assert!(diagnostics.is_empty());
+
+        // An indented key is not a document title.
+        let diagnostics = lint_text(
+            "---\nauthor:\n  title: nested\n---\n\ntext\n",
+            Dialect::Gfm,
+            &config,
+        );
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(diagnostics[0].rule, "MD041");
     }
 }
