@@ -27,6 +27,8 @@ clap.workspace = true
 ignore.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sigpipe.workspace = true
+similar.workspace = true
 terminal_size.workspace = true
 toml.workspace = true
 
