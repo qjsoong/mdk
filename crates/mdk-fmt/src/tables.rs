@@ -118,6 +118,16 @@ fn delimiter(alignment: TableAlignment, width: usize) -> String {
     }
 }
 
+/// Whether the row ends with a structural trailing pipe rather than an
+/// escaped `\|` written as cell content.
+fn ends_with_unescaped_pipe(trimmed: &str) -> bool {
+    let Some(prefix) = trimmed.strip_suffix('|') else {
+        return false;
+    };
+    let backslashes = prefix.chars().rev().take_while(|ch| *ch == '\\').count();
+    backslashes % 2 == 0
+}
+
 /// Splits a table row into trimmed cells, respecting escaped pipes and pipes
 /// inside code spans.
 ///
@@ -127,8 +137,8 @@ pub(crate) fn split_row(line: &str) -> Option<(Vec<String>, bool, bool)> {
     if trimmed.is_empty() {
         return None;
     }
-    let leading = trimmed.starts_with('|');
-    let trailing = trimmed.ends_with('|') && trimmed.len() > 1;
+    let leading = trimmed.starts_with('|') && trimmed.len() > 1;
+    let trailing = ends_with_unescaped_pipe(trimmed) && trimmed.len() > 1;
     let body = if leading { &trimmed[1..] } else { trimmed };
     let body = if trailing && !body.is_empty() {
         &body[..body.len() - 1]

@@ -4,11 +4,14 @@
 //! phase sees offsets that match the current text:
 //!
 //! 1. whitespace: trailing whitespace, hard breaks, blank line management;
-//! 2. structure: headings, list markers, code fences, tables, thematic
-//!    breaks;
-//! 3. reflow: wrap paragraphs to the configured width;
-//! 4. delimiters: normalise emphasis and strong markers;
-//! 5. finalisation: line endings and the trailing newline.
+//! 2. structure: headings, code fences, tables, thematic breaks;
+//! 3. lists: list markers, marker spacing and ordered numbering;
+//! 4. reflow: wrap paragraphs to the configured width;
+//! 5. delimiters: normalise emphasis and strong markers;
+//! 6. finalisation: line endings and the trailing newline.
+//!
+//! Structural rewrites live in their own phase so they never compete for the
+//! same line: each phase re-parses the previous phase's output.
 //!
 //! When verification is enabled the result is rendered to HTML and compared
 //! with the original; if they differ, formatting fails instead of returning
@@ -69,6 +72,7 @@ pub fn format_text(
     if !current.is_empty() {
         current = phase_whitespace(&current, dialect, options);
         current = phase_structure(&current, dialect, options);
+        current = phase_lists(&current, dialect, options);
         if options.reflow {
             current = phase_reflow(&current, dialect, options);
         }
@@ -148,13 +152,15 @@ fn trim_line(line: &str, kind: LineKind, options: &FormatOptions) -> String {
         return line.to_string();
     }
     let trimmed = trim_end(line);
-    let trailing = line.len() - trimmed.len();
-    if kind == LineKind::Normal && trailing >= 2 && !trimmed.is_empty() {
+    // Only two literal spaces immediately before the newline are a hard
+    // break; trailing tabs or other whitespace are not.
+    let trailing_spaces = line.len() - line.trim_end_matches(' ').len();
+    if kind == LineKind::Normal && line.ends_with("  ") && !trimmed.is_empty() {
         return match options.hard_break_style {
             crate::options::HardBreakStyle::Spaces => format!("{trimmed}  "),
             crate::options::HardBreakStyle::Backslash => format!("{trimmed}\\"),
             crate::options::HardBreakStyle::Preserve => {
-                format!("{trimmed}{}", " ".repeat(trailing))
+                format!("{trimmed}{}", " ".repeat(trailing_spaces.max(2)))
             }
         };
     }
@@ -186,9 +192,9 @@ fn phase_whitespace(text: &str, dialect: Dialect, options: &FormatOptions) -> St
     };
 
     let mut before: Vec<Vec<String>> = vec![Vec::new(); lines.len()];
-    for line in insertions {
+    for (line, blank) in insertions {
         if line < lines.len() {
-            before[line].push(String::new());
+            before[line].push(blank);
         }
     }
     if options.blank_line_after_front_matter
@@ -205,13 +211,22 @@ fn phase_whitespace(text: &str, dialect: Dialect, options: &FormatOptions) -> St
     let mut collected: Vec<(String, bool)> = Vec::with_capacity(lines.len());
     let mut blank_run = 0usize;
     for (index, line) in lines.iter().enumerate() {
-        for _ in &before[index] {
-            collected.push((String::new(), true));
-        }
         let kind = kinds[index];
         let processed = trim_line(line, kind, options);
-        let removable_blank =
-            kind == LineKind::Blank || (processed.is_empty() && !kind.is_verbatim());
+        // Quoted blank lines (`>`) separate blocks just like empty lines.
+        let removable_blank = kind == LineKind::Blank
+            || (processed.is_empty() && !kind.is_verbatim())
+            || (!kind.is_verbatim() && is_loose_blank(&processed));
+
+        // Blank lines planned between blocks count towards the same run, so
+        // an inserted blank next to an existing one is not duplicated.
+        for blank in &before[index] {
+            blank_run += 1;
+            if blank_run <= maximum {
+                collected.push((blank.clone(), true));
+                continue;
+            }
+        }
         if removable_blank {
             blank_run += 1;
             if blank_run <= maximum {
@@ -239,8 +254,12 @@ fn phase_whitespace(text: &str, dialect: Dialect, options: &FormatOptions) -> St
     from_lines(&result)
 }
 
-/// Line indices where a blank line should be inserted before the line.
-fn blank_insertions(source: &Source, root: comrak::Node<'_>) -> Vec<usize> {
+/// Line indices where a blank line should be inserted before the line,
+/// together with the text of that blank line.
+///
+/// Inside a blockquote a truly empty line would end the quote, so the blank
+/// line repeats the quote markers (`>`, `> >`, ...).
+fn blank_insertions(source: &Source, root: comrak::Node<'_>) -> Vec<(usize, String)> {
     let mut insertions = Vec::new();
     for parent in root.descendants() {
         let allowed = match &parent.data().value {
@@ -253,22 +272,43 @@ fn blank_insertions(source: &Source, root: comrak::Node<'_>) -> Vec<usize> {
         if !allowed {
             continue;
         }
+        let blank = blank_line_for(parent);
         let mut previous: Option<comrak::Node<'_>> = None;
         for child in parent.children() {
             if let Some(previous) = previous {
                 let previous_end = node_lines(previous).end;
                 let next_start = child.data().sourcepos.start.line.saturating_sub(1);
-                if next_start > previous_end
+                if next_start >= previous_end
                     && !(previous_end..next_start)
                         .any(|line| is_loose_blank(source.line(line)))
                 {
-                    insertions.push(next_start);
+                    insertions.push((next_start, blank.clone()));
                 }
             }
             previous = Some(child);
         }
     }
     insertions
+}
+
+/// The blank line that keeps a gap inside its container: blockquote markers
+/// when the parent is (or is inside) a blockquote, otherwise nothing.
+fn blank_line_for(parent: comrak::Node<'_>) -> String {
+    let mut quotes = 0usize;
+    let mut current = Some(parent);
+    while let Some(node) = current {
+        if matches!(node.data().value, NodeValue::BlockQuote) {
+            quotes += 1;
+        }
+        current = node.parent();
+    }
+    if quotes == 0 {
+        String::new()
+    } else {
+        std::iter::repeat_n(">", quotes)
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -282,10 +322,24 @@ fn phase_structure(text: &str, dialect: Dialect, options: &FormatOptions) -> Str
     let comrak_options = dialect.comrak_options();
     with_parsed_options(&source, &comrak_options, |root| {
         collect_heading_edits(&source, root, options, &mut edits);
-        collect_list_edits(&source, root, options, &mut edits);
         collect_fence_edits(&source, root, options, &mut edits);
         collect_table_edits(&source, root, options, &mut edits);
         collect_thematic_break_edits(&source, root, options, &mut edits);
+    });
+    from_lines(&apply_line_edits(&lines, &edits))
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: list markers
+// ---------------------------------------------------------------------------
+
+fn phase_lists(text: &str, dialect: Dialect, options: &FormatOptions) -> String {
+    let source = Source::new(text.to_string());
+    let lines = to_lines(text);
+    let mut edits = vec![LineEdit::default(); lines.len()];
+    let comrak_options = dialect.comrak_options();
+    with_parsed_options(&source, &comrak_options, |root| {
+        collect_list_edits(&source, root, options, &mut edits);
     });
     from_lines(&apply_line_edits(&lines, &edits))
 }
@@ -761,19 +815,18 @@ fn collect_table_edits(
             continue;
         };
         let lines = node_lines(node);
-        let text_lines: Vec<&str> = (lines.start..lines.end)
-            .map(|line| source.line(line))
-            .collect();
+        let Some(prefix) = block_prefix(source, node) else {
+            continue;
+        };
+        // Parse the rows without their container prefix so a table inside a
+        // blockquote or list item is aligned as a table.
+        let stripped = block_body_lines(source, &prefix);
+        let text_lines: Vec<&str> = stripped.iter().map(String::as_str).collect();
         let Some(mut parsed) = tables::parse(&text_lines, table) else {
             continue;
         };
-        if let Some(prefix) = block_prefix(source, node) {
-            // Keep the table's own indentation beyond the container prefix.
-            let first_line = source.line(lines.start);
-            let after_prefix = first_line.get(prefix.first.len()..).unwrap_or("");
-            let extra = after_prefix.len() - after_prefix.trim_start_matches(' ').len();
-            parsed.indent = format!("{}{}", prefix.continuation, " ".repeat(extra));
-        }
+        // Re-attach the container prefix, keeping the table's own indent.
+        parsed.indent = format!("{}{}", prefix.continuation, parsed.indent);
         for (offset, rendered) in tables::render(&parsed, options).iter().enumerate() {
             let line = lines.start + offset;
             if source.line(line) != rendered {
@@ -806,7 +859,13 @@ fn collect_thematic_break_edits(
         let Some(prefix) = block_prefix(source, node) else {
             continue;
         };
-        let replacement = format!("{}{marker}", prefix.continuation);
+        // The rule may be the first block of a list item. Rewriting the
+        // marker after a list marker can merge with it (`- ---`, `* * *`),
+        // so rules inside list items or footnote definitions are left alone.
+        if prefix.first != prefix.continuation {
+            continue;
+        }
+        let replacement = format!("{}{marker}", prefix.first);
         if source.line(line) != replacement {
             edits[line].replacement = Some(replacement);
         }
@@ -814,7 +873,7 @@ fn collect_thematic_break_edits(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3: paragraph reflow
+// Phase 4: paragraph reflow
 // ---------------------------------------------------------------------------
 
 fn phase_reflow(text: &str, dialect: Dialect, options: &FormatOptions) -> String {
@@ -889,7 +948,7 @@ fn looks_like_reference_definition(line: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 4: emphasis delimiters
+// Phase 5: emphasis delimiters
 // ---------------------------------------------------------------------------
 
 fn phase_delimiters(text: &str, dialect: Dialect, options: &FormatOptions) -> String {
@@ -992,7 +1051,15 @@ mod tests {
     }
 
     fn format_with(markdown: &str, dialect: Dialect) -> String {
-        format_text(markdown, dialect, &FormatOptions::default())
+        format_with_options(markdown, dialect, &FormatOptions::default())
+    }
+
+    fn format_with_options(
+        markdown: &str,
+        dialect: Dialect,
+        options: &FormatOptions,
+    ) -> String {
+        format_text(markdown, dialect, options)
             .expect("formatting should succeed")
             .output
     }
@@ -1042,6 +1109,88 @@ mod tests {
     fn aligns_tables() {
         let output = format_with("| a | b |\n|---|---|\n| 1 | 2 |\n", Dialect::Gfm);
         assert_eq!(output, "| a   | b   |\n| --- | --- |\n| 1   | 2   |\n");
+    }
+
+    #[test]
+    fn structures_and_list_markers_compose() {
+        let options = FormatOptions {
+            list_bullet: BulletStyle::Dash,
+            ..FormatOptions::default()
+        };
+        let once = format_with_options("* # Title ##\n", Dialect::Gfm, &options);
+        assert_eq!(once, "- # Title\n");
+        assert_eq!(format_with_options(&once, Dialect::Gfm, &options), once);
+
+        let fences = FormatOptions {
+            list_bullet: BulletStyle::Dash,
+            code_fence_style: FenceStyle::Backtick,
+            ..FormatOptions::default()
+        };
+        let once = format_with_options("* ~~~\n  x\n  ~~~\n", Dialect::Gfm, &fences);
+        assert_eq!(once, "- ```\n  x\n  ```\n");
+        assert_eq!(format_with_options(&once, Dialect::Gfm, &fences), once);
+    }
+
+    #[test]
+    fn trailing_tab_is_not_a_hard_break() {
+        assert_eq!(format("a \t\nb\n"), "a b\n");
+        assert_eq!(format("a  \nb\n"), "a  \nb\n");
+    }
+
+    #[test]
+    fn thematic_break_inside_a_list_item_is_left_alone() {
+        let options = FormatOptions {
+            thematic_break: "---".to_string(),
+            ..FormatOptions::default()
+        };
+        assert_eq!(
+            format_with_options("- * * *\n", Dialect::Gfm, &options),
+            "- * * *\n"
+        );
+        assert_eq!(
+            format_with_options("> * * *\n", Dialect::Gfm, &options),
+            "> ---\n"
+        );
+    }
+
+    #[test]
+    fn aligns_tables_inside_blockquotes() {
+        let input = "> a | b\n> --- | ---\n> 1 | 2\n";
+        let once = format(input);
+        assert!(!once.contains("> >"), "{once:?}");
+        assert_eq!(
+            format_with_options(&once, Dialect::Gfm, &FormatOptions::default()),
+            once
+        );
+    }
+
+    #[test]
+    fn hard_break_detection_resets_at_html() {
+        assert_eq!(format("a  <b>\nc\n"), "a <b> c\n");
+    }
+
+    #[test]
+    fn escaped_trailing_pipe_stays_in_the_cell() {
+        let once = format("| a |\n| - |\n| a \\|\n");
+        assert!(once.contains("a \\|"), "{once:?}");
+    }
+
+    #[test]
+    fn pre_prefixed_tags_do_not_disable_collapsing() {
+        let input = "<div>\n<preview>\n</div>\n\nA paragraph that is easily long enough to be reflowed by the formatter at the default width.\n";
+        let _ = format(input);
+    }
+
+    #[test]
+    fn blank_line_between_adjacent_blocks() {
+        assert_eq!(format("para\n# h\n"), "para\n\n# h\n");
+    }
+
+    #[test]
+    fn blank_line_between_quoted_blocks_stays_quoted() {
+        let once = format("> para\n> - item\n");
+        assert_eq!(once, "> para\n>\n> - item\n");
+        assert_eq!(format(&once), once);
     }
 
     #[test]

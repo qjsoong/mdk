@@ -59,8 +59,8 @@ pub(crate) fn normalize_whitespace(html: &str) -> String {
             continue;
         }
         if ch == '<' {
-            let is_closing = rest.starts_with("</pre");
-            let is_opening = !is_closing && rest.starts_with("<pre");
+            let is_closing = starts_tag(rest, true, "pre");
+            let is_opening = !is_closing && starts_tag(rest, false, "pre");
             out.push('<');
             in_tag = true;
             pending_space = false;
@@ -90,6 +90,17 @@ pub(crate) fn normalize_whitespace(html: &str) -> String {
         rest = &rest[ch.len_utf8()..];
     }
     out
+}
+
+/// Whether `rest` begins with the complete open or close tag `name`.
+///
+/// The name must be followed by a delimiter (`>`, whitespace, `/`) so a
+/// `<preview>` element does not toggle preformatted handling.
+fn starts_tag(rest: &str, closing: bool, name: &str) -> bool {
+    let prefix = if closing { "</" } else { "<" };
+    rest.strip_prefix(prefix)
+        .and_then(|remaining| remaining.strip_prefix(name))
+        .is_some_and(|after| after.starts_with(['>', ' ', '/', '\t', '\n', '\r']))
 }
 
 /// Describes the first difference between two strings with surrounding text.

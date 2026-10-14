@@ -16,3 +16,7 @@ this line is lazy
 
 > - an item with a lazy paragraph line
 lazy continuation of the list item paragraph
+
+> a quoted paragraph directly followed by a list
+> - item one
+> - item two

@@ -102,7 +102,12 @@ fn tokenize(text: &str, style: HardBreakStyle) -> Vec<Token> {
                 if !word.is_empty() {
                     flush_word!();
                 }
-                spaces_run += 1;
+                // Only literal spaces before a newline form a hard break.
+                if ch == ' ' {
+                    spaces_run += 1;
+                } else {
+                    spaces_run = 0;
+                }
                 index += ch.len_utf8();
             }
             '\n' => {
@@ -165,6 +170,7 @@ fn tokenize(text: &str, style: HardBreakStyle) -> Vec<Token> {
                 }
             }
             '<' => {
+                spaces_run = 0;
                 if let Some(end) = find_protected_angle(text, index) {
                     word.push_str(&text[index..end]);
                     index = end;

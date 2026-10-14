@@ -12,6 +12,10 @@ use crate::{Position, Source, Span};
 /// `comrak` sometimes reports an end position of `(line, 0)`, meaning the
 /// node ends just before that line; this function compensates so callers can
 /// iterate the lines a node really exists on.
+///
+/// A `(line, 1)` end position is ambiguous — it can mean "one past the
+/// previous line" or "the character at column 1 of this line" — so it is
+/// treated as inclusive, which is the safer choice for line-based rules.
 #[must_use]
 pub fn node_lines(node: &comrak::nodes::AstNode<'_>) -> Range<usize> {
     let sourcepos = node.data().sourcepos;
