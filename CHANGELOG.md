@@ -19,8 +19,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **mdk-render**: consecutive blank lines inside code blocks are preserved
-  instead of collapsing into one.
+- **mdk-render**: blank lines inside code blocks, including consecutive and
+  leading ones, are preserved instead of collapsing, so the code a reader copies
+  matches the fenced content.
 
 ## 0.2.0 - 2026-10-14
 

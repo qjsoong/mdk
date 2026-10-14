@@ -4,6 +4,8 @@ mod emit;
 mod model;
 mod table;
 
+pub use emit::encode;
+
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Arc;
@@ -243,9 +245,9 @@ impl<'a> TerminalRenderer<'a> {
             .enumerate()
             .map(|(index, line)| {
                 let line_index = first + index;
-                self.source
-                    .line_info(line_index)
-                    .map(|info| literal_line_offset(self.source, info.range(), line))
+                self.source.line_info(line_index).and_then(|info| {
+                    literal_line_offset(self.source, info.range(), line)
+                })
             })
             .collect()
     }
@@ -273,7 +275,9 @@ impl<'a> TerminalRenderer<'a> {
                     .find(line)
                     .map(|offset| range.start + search + offset)
             };
-            if let Some(offset) = offset {
+            if line.is_empty() {
+                self.emitter.push_line(&[]);
+            } else if let Some(offset) = offset {
                 search = offset - range.start + line.len();
                 self.emitter.push_line(&[Span::mapped(
                     style,
@@ -328,6 +332,9 @@ impl<'a> TerminalRenderer<'a> {
             }
             comrak::nodes::ListType::Ordered => format!("{}.", list.start + index),
         };
+        // The marker is its own line when the item's first child is another
+        // block; do not stamp it with the previous block's context.
+        self.emitter.set_context(LineKind::Text, None);
         self.emitter
             .push_text(Style::default(), &format!("{marker} "));
         let mut marker_width = mdk_core::text::display_width(&marker) + 1;
@@ -424,6 +431,7 @@ impl<'a> TerminalRenderer<'a> {
         self.emitter.blank();
         for (number, node) in definitions {
             self.emitter.blank();
+            self.emitter.set_context(LineKind::Text, None);
             self.emitter
                 .push_text(Style::default().fg(Color::Cyan), &format!("[{number}] "));
             let mut prefix = self.emitter.prefix().to_vec();
@@ -556,20 +564,22 @@ impl<'a> TerminalRenderer<'a> {
         link: &comrak::nodes::NodeLink,
         out: &mut Vec<Span>,
     ) {
+        const PREFIX: &str = "image: ";
         let image_style = style.fg(Color::BrightBlue).underline();
         let alt = collect_text(node);
         let trimmed = alt.trim();
         let label = if trimmed.is_empty() {
             "image".to_string()
         } else {
-            format!("image: {trimmed}")
+            format!("{PREFIX}{trimmed}")
         };
         let mut ranges: Vec<Option<Range<usize>>> = Vec::new();
         ranges.push(None);
-        ranges.extend(std::iter::repeat_n(
-            None,
-            label.chars().count() - trimmed.chars().count(),
-        ));
+        if trimmed.is_empty() {
+            ranges.extend(std::iter::repeat_n(None, "image".chars().count()));
+        } else {
+            ranges.extend(std::iter::repeat_n(None, PREFIX.chars().count()));
+        }
         match self.locate_after(node, "![", trimmed) {
             SourceMap::Verbatim(start) => {
                 for (index, ch) in trimmed.char_indices() {
@@ -639,19 +649,27 @@ impl<'a> TerminalRenderer<'a> {
 
 /// The offset of `literal` inside a source line that may carry the block
 /// indentation that `comrak` stripped.
-fn literal_line_offset(source: &Source, range: Range<usize>, literal: &str) -> usize {
+///
+/// Returns `None` when the literal cannot be located in the line, for example
+/// when `comrak` expanded a tab while stripping indentation. Callers map such
+/// lines without source information instead of pointing at the wrong bytes.
+fn literal_line_offset(
+    source: &Source,
+    range: Range<usize>,
+    literal: &str,
+) -> Option<usize> {
     if literal.is_empty() {
-        return range.start;
+        return Some(range.start);
     }
     let text = source.slice(range.clone());
     if text.ends_with(literal) {
-        return range.end - literal.len();
+        return Some(range.end - literal.len());
     }
     let trimmed = text.trim_end();
     if trimmed.ends_with(literal) {
-        return range.start + trimmed.len() - literal.len();
+        return Some(range.start + trimmed.len() - literal.len());
     }
-    range.start
+    None
 }
 
 /// Aligns a decoded `literal` with the raw `source` slice it was parsed from,
@@ -764,6 +782,20 @@ mod tests {
 
     fn document(markdown: &str) -> Document {
         render_terminal_document(markdown, Dialect::Gfm, &TermOptions::default())
+    }
+
+    /// Plain layout with the same line structure as [`document`], but ASCII
+    /// markers and raw HTML kept so assertions are flavour independent.
+    fn plain_document(markdown: &str) -> Document {
+        render_terminal_document(
+            markdown,
+            Dialect::Gfm,
+            &TermOptions {
+                color: false,
+                strip_html: false,
+                ..TermOptions::plain(60)
+            },
+        )
     }
 
     fn code_line_span<'a>(line: &'a Line, text: &str) -> &'a Span {
@@ -1022,9 +1054,160 @@ mod tests {
     fn literal_line_offset_handles_indentation() {
         let source = Source::new("    let x = 1;\n".to_string());
         let range = source.line_range(0);
-        assert_eq!(literal_line_offset(&source, range, "let x = 1;"), 4);
+        assert_eq!(literal_line_offset(&source, range, "let x = 1;"), Some(4));
         let source = Source::new("  let x = 1;  \n".to_string());
         let range = source.line_range(0);
-        assert_eq!(literal_line_offset(&source, range, "let x = 1;"), 2);
+        assert_eq!(literal_line_offset(&source, range, "let x = 1;"), Some(2));
+        // A tab expanded by comrak cannot be located; the line stays unmapped.
+        let source = Source::new("> \t\tfoo\n".to_string());
+        let range = source.line_range(0);
+        assert_eq!(literal_line_offset(&source, range, "  foo"), None);
+    }
+
+    #[test]
+    fn code_blocks_keep_a_leading_blank_line() {
+        let doc = document("# Title\n\n```rust\n\nlet x = 1;\n```\n");
+        let code: Vec<&Line> = doc
+            .lines
+            .iter()
+            .filter(|line| line.kind == LineKind::Code)
+            .collect();
+        // The leading blank line is part of the code block, not only the
+        // block separator before it.
+        assert_eq!(code.len(), 2);
+        assert!(code[0].spans.is_empty());
+        assert_eq!(code[0].block, code[1].block);
+        assert!(code[1].text().contains("let x = 1;"));
+        let first = doc
+            .lines
+            .iter()
+            .position(|line| line.kind == LineKind::Code)
+            .expect("code");
+        assert_eq!(doc.lines[first - 1].kind, LineKind::Blank);
+        assert_eq!(doc.lines[first - 1].block, None);
+    }
+
+    #[test]
+    fn html_block_blank_lines_stay_empty() {
+        let doc = plain_document("> <pre>\n>\n> x\n> </pre>\n");
+        let texts: Vec<String> = doc.lines.iter().map(Line::text).collect();
+        assert!(texts.iter().any(|text| text == "> x"), "{texts:?}");
+        assert!(
+            !texts.iter().any(|text| text == "> "),
+            "empty HTML lines must not gain the container prefix: {texts:?}"
+        );
+    }
+
+    #[test]
+    fn nested_list_marker_has_no_stale_context() {
+        let doc = plain_document("# H\n\n- - x\n");
+        let marker = doc
+            .lines
+            .iter()
+            .find(|line| line.text() == "-")
+            .expect("outer marker line");
+        assert_eq!(marker.kind, LineKind::Text);
+        assert_eq!(marker.block, None);
+    }
+
+    #[test]
+    fn image_labels_map_every_character() {
+        for markdown in ["![alt](i.png)\n", "![中文说明](i.png)\n", "![](i.png)\n"]
+        {
+            let source = Source::new(markdown.to_string());
+            let doc = document(markdown);
+            for line in &doc.lines {
+                for span in &line.spans {
+                    if let SourceMap::PerChar(ranges) = &span.source {
+                        assert_eq!(
+                            ranges.len(),
+                            span.text.chars().count(),
+                            "{:?}",
+                            span.text
+                        );
+                        for range in ranges.iter().flatten() {
+                            assert!(range.end <= source.text().len());
+                            assert!(source.text().is_char_boundary(range.start));
+                            assert!(source.text().is_char_boundary(range.end));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn multibyte_maps_stay_in_bounds() {
+        let markdown = "中文 &amp; 文字\n";
+        let source = Source::new(markdown.to_string());
+        let doc = document(markdown);
+        for line in &doc.lines {
+            for span in &line.spans {
+                match &span.source {
+                    SourceMap::Verbatim(start) => {
+                        let end = start + span.text.len();
+                        assert!(end <= source.text().len());
+                        assert_eq!(&source.text()[*start..end], span.text);
+                    }
+                    SourceMap::PerChar(ranges) => {
+                        assert_eq!(ranges.len(), span.text.chars().count());
+                        for range in ranges.iter().flatten() {
+                            assert!(range.end <= source.text().len());
+                        }
+                    }
+                    SourceMap::None => {}
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn verbatim_maps_match_the_source_in_repository_docs() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut files = vec![root.join("README.md")];
+        for directory in [root.join("docs"), root.join("crates/mdk-fmt/tests/corpus")] {
+            let Ok(entries) = std::fs::read_dir(&directory) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().is_some_and(|extension| extension == "md") {
+                    files.push(path);
+                }
+            }
+        }
+        for file in files {
+            let Ok(markdown) = std::fs::read_to_string(&file) else {
+                continue;
+            };
+            let source = Source::new(markdown.clone());
+            let doc = render_terminal_document(
+                &markdown,
+                Dialect::Gfm,
+                &TermOptions::default(),
+            );
+            for line in &doc.lines {
+                for span in &line.spans {
+                    if let SourceMap::Verbatim(start) = &span.source {
+                        let end = start + span.text.len();
+                        assert!(
+                            end <= source.text().len()
+                                && source.text().is_char_boundary(*start)
+                                && source.text().is_char_boundary(end),
+                            "{}: span {:?} has invalid range {start}..{end}",
+                            file.display(),
+                            span.text
+                        );
+                        assert_eq!(
+                            &source.text()[*start..end],
+                            span.text,
+                            "{}: Verbatim slice mismatch for {:?}",
+                            file.display(),
+                            span.text
+                        );
+                    }
+                }
+            }
+        }
     }
 }

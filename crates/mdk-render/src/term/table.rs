@@ -291,6 +291,25 @@ mod tests {
     }
 
     #[test]
+    fn wrapped_cells_repeat_their_columns() {
+        let rows = vec![vec![
+            vec![Span::plain("one two three four five")],
+            vec![Span::plain("x")],
+        ]];
+        let alignments = vec![TableAlignment::None, TableAlignment::None];
+        let lines =
+            render_table(&rows, &alignments, 20, &[], &TableChars::ascii()).unwrap();
+        let data: Vec<_> = lines.iter().filter(|line| !line.border).collect();
+        assert!(data.len() > 1, "the first cell should wrap");
+        let columns = data[0].cells[0].columns.clone();
+        for line in &data[1..] {
+            assert_eq!(line.cells.len(), 2);
+            assert_eq!(line.cells[0].columns, columns);
+            assert_eq!(line.continuation, Continuation::Space);
+        }
+    }
+
+    #[test]
     fn long_words_are_split_to_fit_the_width() {
         let rows = vec![
             vec![
