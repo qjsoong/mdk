@@ -148,7 +148,7 @@ fn count_table_cells(line: &str) -> Option<usize> {
         match ch {
             '\\' => escaped = true,
             '`' => backticks += 1,
-            '|' if backticks % 2 == 0 => pipes += 1,
+            '|' if backticks.is_multiple_of(2) => pipes += 1,
             _ => {}
         }
     }

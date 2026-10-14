@@ -1,0 +1,19 @@
+# Repository-wide mdk configuration; used by CI and by contributors who
+# run `mdk` from the checkout.
+dialect = "gfm"
+
+[lint]
+# Line length is enforced by the formatter's reflow, but tables and long
+# URLs would need exceptions, so the rule is relaxed rather than disabled.
+severity = { MD013 = "warning" }
+
+[lint.rules.MD013]
+line_length = 80
+# README examples deliberately show raw tool output that can be long.
+code_blocks = false
+tables = false
+
+[fmt]
+line_width = 80
+heading_style = "atx"
+line_ending = "lf"

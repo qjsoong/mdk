@@ -1,0 +1,6 @@
+# Normalise text files to LF, except fixtures that intentionally test CRLF.
+* text=auto eol=lf
+crates/mdk-fmt/tests/corpus/crlf.md text eol=crlf
+
+# Binary-ish generated fixtures if any are added later.
+*.png binary

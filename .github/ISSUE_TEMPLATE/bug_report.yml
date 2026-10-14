@@ -1,0 +1,59 @@
+name: Bug report
+description: Report incorrect lint output, formatting changes, or a crash.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For anything security related, please use
+        [private vulnerability reporting](https://github.com/qjsoong/mdk/security/advisories/new)
+        instead.
+  - type: textarea
+    id: input
+    attributes:
+      label: Markdown input
+      description: A minimal document that reproduces the problem.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command you ran, including flags.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include output, diffs or panic messages.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: mdk version
+      description: Output of `mdk --version`.
+    validations:
+      required: true
+  - type: input
+    id: rust
+    attributes:
+      label: Rust version
+      description: Output of `rustc --version`, if you built from source.
+  - type: dropdown
+    id: dialect
+    attributes:
+      label: Dialect
+      options:
+        - gfm
+        - commonmark
+        - not sure

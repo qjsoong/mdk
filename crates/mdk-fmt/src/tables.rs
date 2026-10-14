@@ -155,7 +155,7 @@ pub(crate) fn split_row(line: &str) -> Option<(Vec<String>, bool, bool)> {
                 backticks += 1;
                 current.push(ch);
             }
-            '|' if backticks % 2 == 0 => {
+            '|' if backticks.is_multiple_of(2) => {
                 cells.push(current.trim().to_string());
                 current.clear();
             }
