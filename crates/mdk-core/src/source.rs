@@ -245,7 +245,10 @@ impl Source {
         let Some(line) = self.lines.get(index) else {
             return Position::new(1, 1);
         };
-        let end = offset.clamp(line.start(), line.end());
+        let mut end = offset.clamp(line.start(), line.end());
+        while end > line.start() && !self.text.is_char_boundary(end) {
+            end -= 1;
+        }
         let column = self.text[line.start()..end].chars().count() + 1;
         Position::new(index + 1, column)
     }
@@ -290,14 +293,31 @@ impl Source {
         &self.text[range]
     }
 
-    /// Converts a half-open byte range to a span.
+    /// Converts a half-open byte range to an inclusive span.
+    ///
+    /// The end position points at the start of the last character covered by
+    /// the range, so multi-byte characters never split a column.
     #[must_use]
     pub fn span_of(&self, range: Range<usize>) -> Span {
         if range.is_empty() {
             return Span::point(self.position_of(range.start));
         }
-        let end = range.end.min(self.text.len()).saturating_sub(1);
-        Span::new(self.position_of(range.start), self.position_of(end))
+        let start = range.start.min(self.text.len());
+        let end = range.end.min(self.text.len());
+        let mut last = end;
+        while last > start && !self.text.is_char_boundary(last) {
+            last -= 1;
+        }
+        // Step back one character so the end position is that of the last
+        // covered character, not the byte after it.
+        if last > start {
+            let mut previous = last - 1;
+            while previous > start && !self.text.is_char_boundary(previous) {
+                previous -= 1;
+            }
+            last = previous;
+        }
+        Span::new(self.position_of(start), self.position_of(last))
     }
 
     /// The front matter block, if the document starts with one.
@@ -488,6 +508,23 @@ mod tests {
         assert_eq!(&source.text()[offset..offset + 3], "世");
         assert_eq!(source.position_of(offset), Position::new(1, 7));
         assert_eq!(source.position_of(0), Position::new(1, 1));
+    }
+
+    #[test]
+    fn span_conversion_handles_multibyte_characters() {
+        let source = Source::new("你好世界\n".to_string());
+        // Bytes 0..9 cover the first three characters; the last character
+        // spans bytes 6..9.
+        let span = source.span_of(0..9);
+        assert_eq!(span.start, Position::new(1, 1));
+        assert_eq!(span.end, Position::new(1, 3));
+        assert_eq!(source.span_range(span), 0..9);
+    }
+
+    #[test]
+    fn position_of_clamps_to_character_boundaries() {
+        let source = Source::new("你好\n".to_string());
+        assert_eq!(source.position_of(4), Position::new(1, 2));
     }
 
     #[test]

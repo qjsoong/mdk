@@ -578,7 +578,7 @@ fn collect_list_edits(
         let delta = (new_marker.len() + spaces) as isize
             - (marker.marker_len + marker.spaces) as isize;
 
-        if delta != 0 && !shift_guard(&lines, first, last, delta, &container) {
+        if delta != 0 && !shift_guard(&lines, first, last, delta) {
             continue;
         }
 
@@ -646,21 +646,12 @@ fn adjust_container(container: &str, delta: isize) -> String {
 }
 
 /// Whether continuation lines of an item can be shifted by `delta`.
-fn shift_guard(
-    lines: &[String],
-    first: usize,
-    last: usize,
-    delta: isize,
-    container: &str,
-) -> bool {
+///
+/// Nested marker lines are continuation lines too, and their container
+/// indentation is validated by the same leading-whitespace check.
+fn shift_guard(lines: &[String], first: usize, last: usize, delta: isize) -> bool {
     if delta == 0 {
         return true;
-    }
-    if delta < 0 {
-        let spaces = container.len() - container.trim_end_matches(' ').len();
-        if spaces < (-delta) as usize {
-            return false;
-        }
     }
     for line in first + 1..=last {
         let Some(text) = lines.get(line) else { break };
@@ -713,10 +704,16 @@ fn collect_fence_edits(
         let run = longest_run(&code.literal, fence_char);
         let length = code.fence_length.max(3).max(run + 1);
         let fence: String = std::iter::repeat_n(fence_char, length).collect();
+        // `fence_offset` is the fence's own indentation after the container
+        // prefix; top-level fences may be indented up to three spaces.
+        let opening_indent =
+            format!("{}{}", prefix.first, " ".repeat(code.fence_offset));
+        let closing_indent =
+            format!("{}{}", prefix.continuation, " ".repeat(code.fence_offset));
         let opening_replacement = if info.is_empty() {
-            format!("{}{fence}", prefix.first)
+            format!("{opening_indent}{fence}")
         } else {
-            format!("{}{fence}{info}", prefix.first)
+            format!("{opening_indent}{fence}{info}")
         };
         if opening_replacement != opening {
             edits[first].replacement = Some(opening_replacement);
@@ -724,14 +721,14 @@ fn collect_fence_edits(
 
         if code.closed && last > first {
             let closing = source.line(last);
-            let closing_replacement = format!("{}{fence}", prefix.continuation);
+            let closing_replacement = format!("{closing_indent}{fence}");
             if closing_replacement != closing {
                 edits[last].replacement = Some(closing_replacement);
             }
         } else if !code.closed && options.close_code_fences {
             edits[last]
                 .insert_after
-                .push(format!("{}{fence}", prefix.continuation));
+                .push(format!("{closing_indent}{fence}"));
         }
     }
 }
@@ -771,7 +768,11 @@ fn collect_table_edits(
             continue;
         };
         if let Some(prefix) = block_prefix(source, node) {
-            parsed.indent = prefix.continuation;
+            // Keep the table's own indentation beyond the container prefix.
+            let first_line = source.line(lines.start);
+            let after_prefix = first_line.get(prefix.first.len()..).unwrap_or("");
+            let extra = after_prefix.len() - after_prefix.trim_start_matches(' ').len();
+            parsed.indent = format!("{}{}", prefix.continuation, " ".repeat(extra));
         }
         for (offset, rendered) in tables::render(&parsed, options).iter().enumerate() {
             let line = lines.start + offset;
@@ -970,10 +971,15 @@ fn finalize(original: &str, formatted: &str, options: &FormatOptions) -> String 
         }
     };
     let body = formatted.trim_end_matches(['\n', '\r']);
+    let body = if ending == "\n" {
+        body.to_string()
+    } else {
+        body.replace('\n', ending)
+    };
     if options.final_newline {
         format!("{body}{ending}")
     } else {
-        body.to_string()
+        body
     }
 }
 
@@ -1036,6 +1042,17 @@ mod tests {
     fn aligns_tables() {
         let output = format_with("| a | b |\n|---|---|\n| 1 | 2 |\n", Dialect::Gfm);
         assert_eq!(output, "| a   | b   |\n| --- | --- |\n| 1   | 2   |\n");
+    }
+
+    #[test]
+    fn preserves_crlf_line_endings() {
+        let result = format_text(
+            "a\r\n\r\n```\r\ncode line\r\n```\r\n",
+            Dialect::Commonmark,
+            &FormatOptions::default(),
+        )
+        .expect("formatting succeeds");
+        assert_eq!(result.output, "a\r\n\r\n```\r\ncode line\r\n```\r\n");
     }
 
     #[test]

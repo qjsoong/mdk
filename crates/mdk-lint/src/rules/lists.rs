@@ -364,7 +364,13 @@ impl Rule for Md030 {
                         marker.spaces
                     ),
                 );
-                diagnostic.fix = Some(mdk_core::Fix::new(range, " ".repeat(expected)));
+                // Changing the marker padding shifts the item's content
+                // column; only autofix when there is no continuation line to
+                // re-indent.
+                if !multi {
+                    diagnostic.fix =
+                        Some(mdk_core::Fix::new(range, " ".repeat(expected)));
+                }
                 diagnostics.push(diagnostic);
             }
         }

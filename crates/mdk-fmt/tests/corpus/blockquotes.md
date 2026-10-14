@@ -13,3 +13,6 @@ this line is lazy
 > ```rust
 > fn main() {}
 > ```
+
+> - an item with a lazy paragraph line
+lazy continuation of the list item paragraph

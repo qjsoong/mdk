@@ -2,8 +2,10 @@
 //!
 //! Both the original and the formatted document are rendered with the same
 //! parser options; the HTML is then compared with whitespace collapsed
-//! outside `<pre>` and `<code>` elements, because reflowing changes soft line
-//! breaks, which are insignificant in HTML.
+//! outside `<pre>` elements, because reflowing changes soft line breaks,
+//! which are insignificant in HTML. Inline `<code>` collapses whitespace
+//! like any other inline element; code spans themselves are never touched by
+//! the formatter.
 
 use mdk_core::{Dialect, Source, with_parsed_options};
 
@@ -38,8 +40,8 @@ pub(crate) fn verify_semantics(
 
 /// Collapses insignificant whitespace in HTML text nodes.
 ///
-/// Whitespace inside `<pre>` and `<code>` elements is preserved verbatim, as
-/// is the content of tags and attribute values.
+/// Whitespace inside `<pre>` elements is preserved verbatim, as is the
+/// content of tags and attribute values.
 pub(crate) fn normalize_whitespace(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut code_depth = 0usize;
@@ -57,9 +59,8 @@ pub(crate) fn normalize_whitespace(html: &str) -> String {
             continue;
         }
         if ch == '<' {
-            let is_closing = rest.starts_with("</pre") || rest.starts_with("</code");
-            let is_opening =
-                !is_closing && (rest.starts_with("<pre") || rest.starts_with("<code"));
+            let is_closing = rest.starts_with("</pre");
+            let is_opening = !is_closing && rest.starts_with("<pre");
             out.push('<');
             in_tag = true;
             pending_space = false;
@@ -134,10 +135,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn whitespace_is_ignored_in_text_but_not_in_code() {
+    fn whitespace_is_ignored_in_text_but_not_in_pre() {
         assert_eq!(
             normalize_whitespace("<p>a\nb</p>"),
             normalize_whitespace("<p>a b</p>")
+        );
+        assert_eq!(
+            normalize_whitespace("<code>a\nb</code>"),
+            normalize_whitespace("<code>a b</code>")
         );
         assert_ne!(
             normalize_whitespace("<pre>a\nb</pre>"),
