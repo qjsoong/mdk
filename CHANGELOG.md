@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- **mdk-render**: `render_terminal_document`, a structured terminal render with
+  source mapping. Each line records its Markdown construct, block, wrap
+  continuation and table cells, and each span records the source bytes it
+  displays, so interactive readers can implement selection, copy and navigation
+  without re-parsing the document. `render_terminal` now encodes that same
+  document.
+
+### Fixed
+
+- **mdk-render**: consecutive blank lines inside code blocks are preserved
+  instead of collapsing into one.
+
 ## 0.2.0 - 2026-10-14
 
 ### Added

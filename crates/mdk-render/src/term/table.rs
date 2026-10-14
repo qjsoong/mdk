@@ -2,7 +2,8 @@
 
 use comrak::nodes::TableAlignment;
 
-use super::emit::{Span, Style, wrap_spans};
+use super::emit::wrap_spans;
+use super::model::{Cell, Continuation, Span, Style};
 
 /// Box-drawing characters used for table borders.
 pub(crate) struct TableChars {
@@ -55,6 +56,18 @@ impl TableChars {
 
 const MIN_COLUMN: usize = 3;
 
+/// One rendered line of a table.
+pub(crate) struct TableLine {
+    /// Styled spans of the line.
+    pub spans: Vec<Span>,
+    /// The display columns of the row's cells; empty for border lines.
+    pub cells: Vec<Cell>,
+    /// Whether this line is a border rather than a row of data.
+    pub border: bool,
+    /// Whether the line continues a wrapped cell of the previous row line.
+    pub continuation: Continuation,
+}
+
 /// Renders a table to styled lines. Returns `None` when the table is not
 /// rectangular, in which case the caller falls back to plain text.
 pub(crate) fn render_table(
@@ -63,7 +76,7 @@ pub(crate) fn render_table(
     width: usize,
     prefix: &[Span],
     chars: &TableChars,
-) -> Option<Vec<Vec<Span>>> {
+) -> Option<Vec<TableLine>> {
     let columns = alignments.len();
     if columns == 0 || rows.is_empty() || rows.iter().any(|row| row.len() != columns) {
         return None;
@@ -91,7 +104,7 @@ pub(crate) fn render_table(
         wrapped.push(wrapped_row);
     }
 
-    let mut lines: Vec<Vec<Span>> = Vec::new();
+    let mut lines: Vec<TableLine> = Vec::new();
     lines.push(border(
         prefix,
         chars.top_left,
@@ -106,26 +119,49 @@ pub(crate) fn render_table(
         let header = row_index == 0;
         for line_index in 0..height {
             let mut line = prefix.to_vec();
+            let mut column = prefix_width;
+            let mut cells = Vec::with_capacity(columns);
             push_char(&mut line, chars.vertical);
-            for (column, cell_lines) in row.iter().enumerate() {
+            column += 1;
+            for (index, cell_lines) in row.iter().enumerate() {
                 let empty: Vec<Span> = Vec::new();
                 let cell = cell_lines.get(line_index).unwrap_or(&empty);
-                let pad = widths[column].saturating_sub(cell_width(cell));
-                let (left, right) = padding(alignments[column], pad);
+                let pad = widths[index].saturating_sub(cell_width(cell));
+                let (left, right) = padding(alignments[index], pad);
+                let start = column;
                 push_char(&mut line, ' ');
+                column += 1;
                 line.extend(std::iter::repeat_n(Span::plain(" "), left));
+                column += left;
                 let mut spans = cell.clone();
                 if header {
                     for span in &mut spans {
                         span.style.bold = true;
                     }
                 }
+                column += cell_width(&spans);
                 line.extend(spans);
                 line.extend(std::iter::repeat_n(Span::plain(" "), right));
+                column += right;
                 push_char(&mut line, ' ');
+                column += 1;
+                cells.push(Cell {
+                    columns: start..column,
+                    header,
+                });
                 push_char(&mut line, chars.vertical);
+                column += 1;
             }
-            lines.push(line);
+            lines.push(TableLine {
+                spans: line,
+                cells,
+                border: false,
+                continuation: if line_index == 0 {
+                    Continuation::None
+                } else {
+                    Continuation::Space
+                },
+            });
         }
         if row_index == 0 && wrapped.len() > 1 {
             lines.push(border(
@@ -185,7 +221,7 @@ fn border(
     right: char,
     widths: &[usize],
     chars: &TableChars,
-) -> Vec<Span> {
+) -> TableLine {
     let style = Style::default().dim();
     let mut line = prefix.to_vec();
     line.push(Span::new(style, left.to_string()));
@@ -199,7 +235,12 @@ fn border(
         }
     }
     line.push(Span::new(style, right.to_string()));
-    line
+    TableLine {
+        spans: line,
+        cells: Vec::new(),
+        border: true,
+        continuation: Continuation::None,
+    }
 }
 
 fn push_char(line: &mut Vec<Span>, ch: char) {
@@ -225,8 +266,19 @@ mod tests {
         let lines =
             render_table(&rows, &alignments, 40, &[], &TableChars::unicode()).unwrap();
         assert_eq!(lines.len(), 5);
-        let text: String = lines[1].iter().map(|span| span.text.as_str()).collect();
+        let text: String = lines[1]
+            .spans
+            .iter()
+            .map(|span| span.text.as_str())
+            .collect();
         assert_eq!(text, "│ a   │ b   │");
+        assert!(lines[0].border);
+        assert!(!lines[1].border);
+        assert_eq!(lines[1].cells.len(), 2);
+        assert_eq!(lines[1].cells[0].columns, 1..6);
+        assert_eq!(lines[1].cells[1].columns, 7..12);
+        assert!(lines[1].cells[0].header);
+        assert!(!lines[3].cells[0].header);
     }
 
     #[test]
@@ -251,8 +303,19 @@ mod tests {
         let lines =
             render_table(&rows, &alignments, 30, &[], &TableChars::ascii()).unwrap();
         for line in &lines {
-            let width: usize = line.iter().map(Span::width).sum();
+            let width: usize = line.spans.iter().map(Span::width).sum();
             assert!(width <= 30, "line too wide ({width})");
         }
+    }
+
+    #[test]
+    fn cell_columns_include_the_prefix() {
+        let rows = vec![vec![vec![Span::plain("a")]]];
+        let alignments = vec![TableAlignment::None];
+        let prefix = vec![Span::plain("> ")];
+        let lines =
+            render_table(&rows, &alignments, 40, &prefix, &TableChars::unicode())
+                .unwrap();
+        assert_eq!(lines[1].cells[0].columns, 3..8);
     }
 }

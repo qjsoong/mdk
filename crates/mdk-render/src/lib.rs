@@ -11,6 +11,11 @@
 //! - [`TermOptions::plain`] produces the same layout as plain text for
 //!   piping into other tools.
 //!
+//! [`render_terminal_document`] exposes the same terminal rendering as a
+//! structured [`term::Document`]: every line and span knows which part of the
+//! Markdown source it came from, so interactive readers can implement
+//! selection, copy and navigation without re-parsing the document.
+//!
 //! ```rust
 //! use mdk_core::Dialect;
 //! use mdk_render::{HtmlOptions, TermOptions, render_html, render_terminal};
@@ -24,8 +29,8 @@
 
 mod html;
 mod options;
-mod term;
+pub mod term;
 
 pub use html::render_html;
 pub use options::{HtmlOptions, TermOptions};
-pub use term::render_terminal;
+pub use term::{render_terminal, render_terminal_document};
