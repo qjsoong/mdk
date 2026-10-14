@@ -56,6 +56,12 @@ impl Config {
         let config: Self = toml::from_str(&text).with_context(|| {
             format!("invalid configuration file {}", path.display())
         })?;
+        config.lint.validate().map_err(|message| {
+            anyhow::anyhow!(
+                "invalid lint configuration in {}: {message}",
+                path.display()
+            )
+        })?;
         Ok((config, Some(path)))
     }
 

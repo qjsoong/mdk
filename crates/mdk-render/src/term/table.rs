@@ -77,7 +77,8 @@ pub(crate) fn render_table(
     }
 
     let prefix_width: usize = prefix.iter().map(Span::width).sum();
-    let available = width.saturating_sub(prefix_width + columns + 1);
+    // Per column: "│ " + cell + " " = 3 border columns, plus the left border.
+    let available = width.saturating_sub(prefix_width + columns.saturating_mul(3) + 1);
     shrink_to_fit(&mut widths, available);
 
     let mut wrapped: Vec<Vec<Vec<Vec<Span>>>> = Vec::with_capacity(rows.len());
@@ -235,5 +236,23 @@ mod tests {
         assert!(
             render_table(&rows, &alignments, 40, &[], &TableChars::ascii()).is_none()
         );
+    }
+
+    #[test]
+    fn long_words_are_split_to_fit_the_width() {
+        let rows = vec![
+            vec![
+                vec![Span::plain("aaaaaaaaaaaaaaa")],
+                vec![Span::plain("bbbbbbbbbbbbbbb")],
+            ],
+            vec![vec![Span::plain("x")], vec![Span::plain("y")]],
+        ];
+        let alignments = vec![TableAlignment::None, TableAlignment::None];
+        let lines =
+            render_table(&rows, &alignments, 30, &[], &TableChars::ascii()).unwrap();
+        for line in &lines {
+            let width: usize = line.iter().map(Span::width).sum();
+            assert!(width <= 30, "line too wide ({width})");
+        }
     }
 }

@@ -274,6 +274,41 @@ fn dialect_flag_changes_parsing() {
 }
 
 #[test]
+fn lint_rejects_stdin_combined_with_paths() {
+    let sandbox = Sandbox::new();
+    sandbox.write("doc.md", CLEAN);
+    let output = sandbox.run_stdin(&["lint", "-", "doc.md"], "# h\n");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        stderr(&output).contains("cannot be combined"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn unknown_rule_selector_is_an_error() {
+    let sandbox = Sandbox::new();
+    sandbox.write("mdk.toml", "[lint]\ndisable = [\"MD0OOPS\"]\n");
+    sandbox.write("doc.md", CLEAN);
+    let output = sandbox.run(&["lint", "doc.md"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("MD0OOPS"), "{}", stderr(&output));
+}
+
+#[test]
+fn render_text_tables_fit_the_width() {
+    let sandbox = Sandbox::new();
+    let table = "| aaaaaaaaaaaaaaa | bbbbbbbbbbbbbbb |\n| --- | --- |\n| x | y |\n";
+    let output =
+        sandbox.run_stdin(&["render", "--to", "text", "--width", "30", "-"], table);
+    assert!(output.status.success());
+    for line in stdout(&output).lines() {
+        assert!(line.chars().count() <= 30, "line too wide: {line:?}");
+    }
+}
+
+#[test]
 fn missing_files_are_reported_cleanly() {
     let sandbox = Sandbox::new();
     let output = sandbox.run(&["lint", "does-not-exist.md"]);

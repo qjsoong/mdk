@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use mdk_core::Dialect;
 use mdk_lint::{Diagnostic, LintConfig, Severity, apply_fixes, lint_text};
 use serde_json::json;
@@ -69,6 +69,9 @@ pub fn run(
     let mut reports = Vec::new();
 
     if args.paths.iter().any(|path| path.as_os_str() == "-") {
+        if args.paths.len() > 1 {
+            bail!("`-` cannot be combined with file paths");
+        }
         let input = read_input(Some(Path::new("-")), &args.stdin_filename)?;
         reports.push(process(input, &lint_config, dialect, args)?);
     } else {

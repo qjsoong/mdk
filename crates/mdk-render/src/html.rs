@@ -43,7 +43,9 @@ fn document_title(markdown: &str, options: &HtmlOptions) -> String {
             })
             .map(mdk_core::ast::collect_text)
     });
-    title.unwrap_or_else(|| options.title.clone())
+    title
+        .map(|text| escape_html(&text))
+        .unwrap_or_else(|| options.title.clone())
 }
 
 fn escape_html(text: &str) -> String {
@@ -107,5 +109,15 @@ mod tests {
             render_html("---\ntitle: Hello\n---\n\nbody\n", Dialect::Gfm, &options);
         assert!(html.contains("<title>Hello</title>"));
         assert!(html.contains("<p>body</p>"));
+    }
+
+    #[test]
+    fn heading_derived_title_is_escaped() {
+        let options = HtmlOptions {
+            full_document: true,
+            ..HtmlOptions::default()
+        };
+        let html = render_html("# a < b & c\n", Dialect::Commonmark, &options);
+        assert!(html.contains("<title>a &lt; b &amp; c</title>"), "{html}");
     }
 }

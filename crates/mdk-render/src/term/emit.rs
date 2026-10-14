@@ -166,8 +166,18 @@ pub(crate) fn wrap_spans(spans: &[Span], limit: usize) -> Vec<Vec<Span>> {
                     let word_width = word.width();
                     let separator = usize::from(space_before && !current.is_empty());
                     if current.is_empty() {
-                        current.push(word);
-                        width = word_width;
+                        if word_width > limit {
+                            push_split_word(
+                                &mut lines,
+                                &mut current,
+                                &word,
+                                limit,
+                                &mut width,
+                            );
+                        } else {
+                            current.push(word);
+                            width = word_width;
+                        }
                     } else if width + separator + word_width <= limit {
                         if space_before {
                             current.push(Span::plain(" "));
@@ -176,8 +186,18 @@ pub(crate) fn wrap_spans(spans: &[Span], limit: usize) -> Vec<Vec<Span>> {
                         width += separator + word_width;
                     } else {
                         lines.push(std::mem::take(&mut current));
-                        current.push(word);
-                        width = word_width;
+                        if word_width > limit {
+                            push_split_word(
+                                &mut lines,
+                                &mut current,
+                                &word,
+                                limit,
+                                &mut width,
+                            );
+                        } else {
+                            current.push(word);
+                            width = word_width;
+                        }
                     }
                     space_before = false;
                 }
@@ -188,6 +208,39 @@ pub(crate) fn wrap_spans(spans: &[Span], limit: usize) -> Vec<Vec<Span>> {
         lines.push(current);
     }
     lines
+}
+
+/// Splits a word wider than `limit` across lines, leaving the final chunk in
+/// `current`. Used for table cells, where a single long token must still fit
+/// the column.
+fn push_split_word(
+    lines: &mut Vec<Vec<Span>>,
+    current: &mut Vec<Span>,
+    word: &Span,
+    limit: usize,
+    width: &mut usize,
+) {
+    let mut chunk = String::new();
+    let mut chunk_width = 0usize;
+    for ch in word.text.chars() {
+        let char_width = display_width(&ch.to_string());
+        if chunk_width > 0 && chunk_width + char_width > limit {
+            lines.push(vec![Span {
+                style: word.style,
+                text: std::mem::take(&mut chunk),
+                atomic: false,
+            }]);
+            chunk_width = 0;
+        }
+        chunk.push(ch);
+        chunk_width += char_width;
+    }
+    current.push(Span {
+        style: word.style,
+        text: chunk,
+        atomic: false,
+    });
+    *width = chunk_width;
 }
 
 enum TokenKind {
@@ -487,10 +540,17 @@ mod tests {
     }
 
     #[test]
-    fn atomic_spans_are_not_split() {
+    fn atomic_spans_prefer_their_own_line() {
         let spans = [Span::atomic(Style::default(), "a b c d e")];
+        // Wide enough: the span is kept together.
+        assert_eq!(wrap_spans(&spans, 10).len(), 1);
+        // Too narrow: the span is split so lines still respect the limit.
         let lines = wrap_spans(&spans, 4);
-        assert_eq!(lines.len(), 1);
+        assert!(lines.len() > 1);
+        for line in &lines {
+            let width: usize = line.iter().map(Span::width).sum();
+            assert!(width <= 4, "line too wide: {width}");
+        }
     }
 
     #[test]
