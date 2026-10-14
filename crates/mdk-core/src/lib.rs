@@ -17,6 +17,7 @@
 pub mod ast;
 pub mod diagnostics;
 pub mod dialect;
+pub mod linekind;
 pub mod source;
 pub mod text;
 
@@ -24,6 +25,7 @@ use comrak::Options;
 
 pub use diagnostics::{Diagnostic, Fix, Severity};
 pub use dialect::Dialect;
+pub use linekind::{LineKind, classify};
 pub use source::{LineEnding, Position, Source, Span};
 
 /// Parses `source` and calls `f` with the root of the resulting AST.

@@ -422,6 +422,14 @@ fn detect_front_matter(text: &str, lines: &[Line]) -> Option<Range<usize>> {
         "+++" => "+++",
         _ => return None,
     };
+    // A blank line directly after the opening delimiter is not valid YAML or
+    // TOML front matter, and treating it as such would swallow a document
+    // that starts with two thematic breaks.
+    let second = lines.get(1)?;
+    let second_text = text[second.range()].trim_end();
+    if second_text != closer && second_text.is_empty() {
+        return None;
+    }
     for line in &lines[1..] {
         let candidate = text[line.range()].trim_end();
         if candidate == closer {
@@ -512,5 +520,19 @@ mod tests {
     fn unterminated_front_matter_is_not_front_matter() {
         let source = Source::new("---\ntitle: x\n\nbody\n".to_string());
         assert!(source.front_matter().is_none());
+    }
+
+    #[test]
+    fn thematic_breaks_are_not_front_matter() {
+        // Three horizontal rules must not be mistaken for front matter just
+        // because two of them use the same delimiter.
+        let source = Source::new("---\n\n---\n\n---\n\ntext\n".to_string());
+        assert!(source.front_matter().is_none());
+    }
+
+    #[test]
+    fn empty_front_matter_is_recognised() {
+        let source = Source::new("---\n---\ntext\n".to_string());
+        assert!(source.front_matter().is_some());
     }
 }

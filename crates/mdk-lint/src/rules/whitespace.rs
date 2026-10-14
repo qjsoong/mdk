@@ -4,8 +4,9 @@ use comrak::nodes::NodeValue;
 use mdk_core::text::{display_width, is_blank, trim_end};
 use mdk_core::{Diagnostic, Fix, Severity};
 
-use crate::context::{LineKind, LintContext};
+use crate::context::LintContext;
 use crate::rules::{Rule, RuleMeta};
+use mdk_core::LineKind;
 
 use super::blank_lines_before;
 

@@ -26,10 +26,9 @@ mod testutil;
 
 pub use config::{LintConfig, RuleOptions};
 pub use context::{
-    Facts, FootnoteInfo, HeadingInfo, LineKind, LintContext, ReferenceDefinition,
-    ReferenceUsage,
+    Facts, FootnoteInfo, HeadingInfo, LintContext, ReferenceDefinition, ReferenceUsage,
 };
 pub use engine::lint_text;
 pub use fix::{FixOutcome, apply_fixes};
-pub use mdk_core::{Diagnostic, Fix, Severity, Source, Span};
+pub use mdk_core::{Diagnostic, Fix, LineKind, Severity, Source, Span};
 pub use rules::{RULES, Rule, RuleMeta, rule_by_id, rule_by_name};

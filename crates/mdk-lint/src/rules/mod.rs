@@ -14,7 +14,8 @@ use comrak::nodes::NodeValue;
 use mdk_core::text;
 use mdk_core::{Fix, Source};
 
-use crate::context::{LineKind, LintContext};
+use crate::context::LintContext;
+use mdk_core::LineKind;
 
 pub use rule::{RULES, Rule, RuleMeta, rule_by_id, rule_by_name};
 

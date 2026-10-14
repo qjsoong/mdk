@@ -6,28 +6,10 @@ use std::ops::Range;
 use comrak::Anchorizer;
 use comrak::nodes::NodeValue;
 use mdk_core::ast::{collect_text, node_span};
-use mdk_core::text::is_blank;
-use mdk_core::{Diagnostic, Dialect, Position, Source, Span};
+use mdk_core::{Diagnostic, Dialect, LineKind, Position, Source, Span, classify};
 
 use crate::config::{LintConfig, RuleOptions};
 use crate::rules::RuleMeta;
-
-/// How a physical line is classified for rule decisions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LineKind {
-    /// A line inside a YAML or TOML front matter block.
-    FrontMatter,
-    /// A line inside an indented or fenced code block.
-    Code,
-    /// A line inside an HTML block.
-    Html,
-    /// A line belonging to a GFM table.
-    Table,
-    /// A blank line outside code and HTML blocks.
-    Blank,
-    /// Any other line.
-    Normal,
-}
 
 /// A heading found in the document.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,7 +115,7 @@ impl<'a, 's> LintContext<'a, 's> {
         dialect: Dialect,
         config: &'s LintConfig,
     ) -> Self {
-        let line_kinds = compute_line_kinds(source, root);
+        let line_kinds = classify(source, root);
         let mut facts = Facts::default();
         compute_headings(root, &mut facts);
         compute_definitions(source, &line_kinds, &mut facts);
@@ -226,38 +208,6 @@ impl<'a, 's> LintContext<'a, 's> {
     pub fn line_start(&self, line: usize) -> Position {
         Position::new(line + 1, 1)
     }
-}
-
-fn compute_line_kinds(source: &Source, root: comrak::Node<'_>) -> Vec<LineKind> {
-    let mut kinds = vec![LineKind::Normal; source.line_count()];
-    for (index, line) in source.lines().enumerate() {
-        if is_blank(line) {
-            kinds[index] = LineKind::Blank;
-        }
-    }
-    if let Some(range) = source.front_matter_range() {
-        for (index, line) in source.lines().enumerate() {
-            if source.line_range(index).start < range.end
-                || !line.is_empty() && index == 0
-            {
-                kinds[index] = LineKind::FrontMatter;
-            }
-        }
-    }
-    for node in root.descendants() {
-        let kind = match node.data().value {
-            NodeValue::CodeBlock(_) => LineKind::Code,
-            NodeValue::HtmlBlock(_) => LineKind::Html,
-            NodeValue::Table(_) => LineKind::Table,
-            _ => continue,
-        };
-        for line in mdk_core::ast::node_lines(node) {
-            if let Some(slot) = kinds.get_mut(line) {
-                *slot = kind;
-            }
-        }
-    }
-    kinds
 }
 
 fn compute_headings(root: comrak::Node<'_>, facts: &mut Facts) {
