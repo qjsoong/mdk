@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
@@ -28,10 +28,10 @@ thiserror = "2.0.21"
 toml = "1.1.8"
 unicode-width = "0.2.2"
 
-mdk-core = { path = "crates/mdk-core", version = "0.2.0" }
-mdk-fmt = { path = "crates/mdk-fmt", version = "0.2.0" }
-mdk-lint = { path = "crates/mdk-lint", version = "0.2.0" }
-mdk-render = { path = "crates/mdk-render", version = "0.2.0" }
+mdk-core = { path = "crates/mdk-core", version = "0.3.0" }
+mdk-fmt = { path = "crates/mdk-fmt", version = "0.3.0" }
+mdk-lint = { path = "crates/mdk-lint", version = "0.3.0" }
+mdk-render = { path = "crates/mdk-render", version = "0.3.0" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
