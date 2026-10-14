@@ -1,0 +1,46 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+authors = ["The mdk authors"]
+repository = "https://github.com/qjsoong/mdk"
+homepage = "https://github.com/qjsoong/mdk"
+readme = "README.md"
+keywords = ["markdown", "commonmark", "gfm", "linter", "formatter"]
+categories = ["command-line-utilities", "text-processing"]
+
+[workspace.dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive", "wrap_help"] }
+comrak = { version = "0.56.0", default-features = false }
+ignore = "0.4.33"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+terminal_size = "0.4.4"
+thiserror = "2.0.21"
+toml = "1.1.8"
+unicode-width = "0.2.2"
+
+mdk-core = { path = "crates/mdk-core", version = "0.1.0" }
+mdk-fmt = { path = "crates/mdk-fmt", version = "0.1.0" }
+mdk-lint = { path = "crates/mdk-lint", version = "0.1.0" }
+mdk-render = { path = "crates/mdk-render", version = "0.1.0" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+unwrap_used = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

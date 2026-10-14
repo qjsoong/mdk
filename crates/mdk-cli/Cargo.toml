@@ -1,0 +1,34 @@
+[package]
+name = "mdk-cli"
+description = "Command-line interface for the mdk Markdown toolkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "mdk"
+path = "src/main.rs"
+
+[dependencies]
+mdk-core.workspace = true
+mdk-fmt.workspace = true
+mdk-lint.workspace = true
+mdk-render.workspace = true
+
+anyhow.workspace = true
+clap.workspace = true
+ignore.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+terminal_size.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

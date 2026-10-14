@@ -1,0 +1,18 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Lock files of workspace members are tracked; ignore stray locks elsewhere
+crates/*/Cargo.lock
+!Cargo.lock
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local tool output
+/.mdk-cache/
