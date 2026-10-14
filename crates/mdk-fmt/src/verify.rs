@@ -59,6 +59,11 @@ pub(crate) fn normalize_whitespace(html: &str) -> String {
             continue;
         }
         if ch == '<' {
+            // A space before an inline tag is significant; keep it so a lost
+            // space in the formatted text cannot slip through verification.
+            if pending_space && !out.is_empty() {
+                out.push(' ');
+            }
             let is_closing = starts_tag(rest, true, "pre");
             let is_opening = !is_closing && starts_tag(rest, false, "pre");
             out.push('<');
@@ -158,6 +163,14 @@ mod tests {
         assert_ne!(
             normalize_whitespace("<pre>a\nb</pre>"),
             normalize_whitespace("<pre>a b</pre>")
+        );
+    }
+
+    #[test]
+    fn spaces_before_inline_tags_are_significant() {
+        assert_ne!(
+            normalize_whitespace("<p>a <b>c</b></p>"),
+            normalize_whitespace("<p>a<b>c</b></p>")
         );
     }
 
