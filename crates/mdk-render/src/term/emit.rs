@@ -373,7 +373,13 @@ fn columns(spans: &[Span]) -> usize {
 }
 
 /// Encodes rendered lines as ANSI-coloured or plain text.
-pub(crate) fn encode(lines: &[Line], color: bool) -> String {
+/// Encodes rendered lines to text, adding ANSI escapes when `color` is set.
+///
+/// [`render_terminal`](super::render_terminal) re-parses the Markdown and
+/// calls this; consumers that already hold a [`Document`](super::Document)
+/// can encode it directly.
+#[must_use]
+pub fn encode(lines: &[Line], color: bool) -> String {
     let mut output = String::new();
     for line in lines {
         for span in &line.spans {

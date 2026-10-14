@@ -178,12 +178,6 @@ pub enum SourceMap {
 }
 
 impl SourceMap {
-    /// Whether the map carries no source information at all.
-    #[must_use]
-    pub fn is_none(&self) -> bool {
-        matches!(self, Self::None)
-    }
-
     /// The source range of the character at `index`, counted in characters.
     #[must_use]
     pub fn char_range(&self, text: &str, index: usize) -> Option<SrcRange> {
@@ -374,6 +368,10 @@ impl Span {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
     /// Display columns covered by the cell, excluding the column separators.
+    ///
+    /// Wrapped rows repeat one [`Cell`] per column on every continuation
+    /// line, with the same column range, so a consumer can merge the cell
+    /// fragments.
     pub columns: Range<usize>,
     /// Whether the cell belongs to the header row.
     pub header: bool,
@@ -387,6 +385,11 @@ pub enum Continuation {
     None,
     /// A soft wrap split the line after a space; copying joins the two with a
     /// single space.
+    ///
+    /// Table rows are the exception: when [`LineKind::TableRow`] lines
+    /// continue a wrapped row, join each cell within its [`Cell::columns`]
+    /// range instead. Cell wrapping may consume a space or split a long word,
+    /// so reconstruct exact cell text from the spans' [`SourceMap`] ranges.
     Space,
     /// A soft wrap split the line without consuming anything; copying joins
     /// the two directly.
@@ -425,6 +428,9 @@ pub struct Line {
     /// Index into [`Document::blocks`] of the block that produced the line.
     pub block: Option<usize>,
     /// How the line continues the previous one when its text is copied.
+    ///
+    /// For [`LineKind::TableRow`] lines this describes the row as a whole;
+    /// join wrapped cells per [`Cell::columns`] instead.
     pub continuation: Continuation,
     /// The cells of a table row; empty for every other line kind.
     pub cells: Vec<Cell>,
