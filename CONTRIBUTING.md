@@ -12,8 +12,9 @@ cargo build
 cargo test --workspace
 ```
 
-The workspace requires Rust 1.89 or newer (pinned in `rust-toolchain.toml`).
-`rustfmt` and `clippy` are part of the toolchain.
+The workspace requires Rust 1.89 or newer, declared by `rust-version` in
+`Cargo.toml`; `rust-toolchain.toml` pins the `stable` channel with `rustfmt` and
+`clippy`.
 
 ## Repository layout
 

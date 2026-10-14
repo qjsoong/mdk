@@ -3,19 +3,17 @@
 dialect = "gfm"
 
 [lint]
-# Line length is enforced by the formatter's reflow, but tables and long
-# URLs would need exceptions, so the rule is relaxed rather than disabled.
-severity = { MD013 = "warning" }
+# MD013 keeps its default warning severity and 80-column limit; only the
+# exceptions below are configured.
+[lint.rules.MD013]
+# README examples deliberately show raw tool output that can be long, and
+# tables are laid out by the formatter rather than wrapped.
+code_blocks = false
+tables = false
 
 [lint.rules.MD024]
 # Changelog sections repeat under each release heading.
 siblings_only = true
-
-[lint.rules.MD013]
-line_length = 80
-# README examples deliberately show raw tool output that can be long.
-code_blocks = false
-tables = false
 
 [fmt]
 line_width = 80

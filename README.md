@@ -77,7 +77,7 @@ Global options apply to every command: `--dialect commonmark|gfm`,
 mdk lint                       # every Markdown file below the CWD
 mdk lint docs/ README.md       # specific paths
 mdk lint - < draft.md          # standard input
-mdk lint --fix --check         # report the problems left after fixing
+mdk lint --fix                 # apply safe fixes and report what remains
 mdk lint --enable MD013,MD032  # only these rules
 mdk lint --disable line-length
 mdk lint --format json         # machine-readable output
@@ -87,11 +87,11 @@ mdk rules                      # list all rules and their severities
 
 Diagnostics use `file:line:column` positions. Exit codes:
 
-| Code | Meaning                                                                        |
-| ---- | ------------------------------------------------------------------------------ |
-| 0    | No problems (or only warnings without `--warn-as-error`)                       |
-| 1    | Problems found, `--check` would change files, or `--max-warnings` was exceeded |
-| 2    | Usage, configuration or I/O error; formatting verification failed              |
+| Code | Meaning                                                                     |
+| ---- | --------------------------------------------------------------------------- |
+| 0    | No problems (or only warnings without `--warn-as-error`)                    |
+| 1    | Errors found, `--warn-as-error` was given, or `--max-warnings` was exceeded |
+| 2    | Usage, configuration or I/O error; formatting verification failed           |
 
 `--fix` applies every safe autofix repeatedly until the document stabilises.
 Fixes that would shift continuation lines (for example marker padding on a
@@ -104,7 +104,7 @@ document.
 mdk fmt --check .              # list files that would change; exit 1 if any
 mdk fmt --write .              # rewrite files in place
 mdk fmt --diff docs/guide.md   # show a unified diff
-mdk fmt --stdout draft.md      # print the formatted document
+mdk fmt draft.md               # print the formatted document
 mdk fmt - --line-width 100     # format stdin with a wider margin
 ```
 
@@ -178,7 +178,9 @@ header_ids = ""
 width = 100
 ```
 
-Unknown keys are rejected so typos surface immediately.
+Unknown top-level, `[lint]`, `[fmt]` and `[render]` keys are rejected so typos
+surface immediately; rule selectors in `[lint]` are validated against the rule
+registry. Unknown keys inside `[lint.rules.*]` tables are ignored.
 
 ## Rule reference
 

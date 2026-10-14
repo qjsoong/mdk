@@ -147,8 +147,8 @@ Options:
 MD052 checks full (`[text][label]`) and collapsed (`[label][]`) references;
 shortcut references (`[label]`) are never reported because they are
 indistinguishable from ordinary bracketed prose. MD053 treats a definition as
-used when the label appears anywhere in body text, which avoids false "unused"
-reports for shortcut references.
+used by full, collapsed and shortcut references, and additionally reports
+duplicate definitions (CommonMark keeps the first one).
 
 ## Tables and rules
 
