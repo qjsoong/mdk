@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- **mdk-core**: `Source::front_matter_value`, a reader for top-level scalar keys
+  in YAML or TOML front matter. It replaces the ad-hoc title extraction in the
+  renderer and the linter, so all three stages now agree on what a front matter
+  key is.
+
+### Fixed
+
+- **mdk-lint**: MD041 and MD025 recognise TOML titles written without spaces
+  (`title="..."`) and no longer treat an indented `title` key as a document
+  title.
+
 ## 0.1.0 - 2026-10-14
 
 ### Added

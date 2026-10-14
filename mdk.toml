@@ -7,6 +7,10 @@ dialect = "gfm"
 # URLs would need exceptions, so the rule is relaxed rather than disabled.
 severity = { MD013 = "warning" }
 
+[lint.rules.MD024]
+# Changelog sections repeat under each release heading.
+siblings_only = true
+
 [lint.rules.MD013]
 line_length = 80
 # README examples deliberately show raw tool output that can be long.
