@@ -14,8 +14,13 @@ categories.workspace = true
 
 [dependencies]
 mdk-core.workspace = true
+comrak.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 unicode-width.workspace = true
+
+[dev-dependencies]
+toml.workspace = true
 
 [lints]
 workspace = true
