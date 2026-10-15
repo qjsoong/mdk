@@ -42,7 +42,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.89.0
+      # The toolchain is pinned through the action input, not the action
+      # version, so Dependabot cannot bump the MSRV itself.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.89.0
       - uses: Swatinem/rust-cache@v2
       - name: Check MSRV
         env:
